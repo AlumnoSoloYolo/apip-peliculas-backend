@@ -6,7 +6,14 @@ const {
     addPeliPendiente,
     addPeliVista,
     addReview,
-    getUserProfile
+    getUserProfile,
+    removePeliPendiente,
+    removePeliVista,
+    getUserReviews,
+    getReview,
+    getMovieReviews,
+    updateReview,
+    deleteReview
 } = require('../controllers/userMovieController');
 
 // Todas las rutas requieren autenticación
@@ -14,7 +21,15 @@ router.use(auth);
 
 router.post('/watchlist', addPeliPendiente);
 router.post('/watched', addPeliVista);
-router.post('/movies/:movieId/reviews', addReview);
-router.get('/profile', auth, getUserProfile);
+router.delete('/watchlist', removePeliPendiente);
+router.delete('/watched', removePeliVista);
+router.get('/profile', getUserProfile);
+
+router.get('/reviews', getUserReviews);
+// router.get('/reviews/:movieId', getReview);
+router.post('/reviews', addReview);
+router.put('/reviews/:movieId', updateReview);
+router.delete('/reviews/:movieId', deleteReview);
+router.get('/movies/:movieId/reviews', getMovieReviews);
 
 module.exports = router;
