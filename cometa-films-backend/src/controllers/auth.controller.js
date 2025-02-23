@@ -15,7 +15,7 @@ const registerUser = async (req, res) => {
             });
         }
 
-        // Check for existing user
+        // comprobar si esxite
         const userExists = await User.findOne({
             $or: [{ email }, { username }]
         });
@@ -122,7 +122,8 @@ const loginUser = async (req, res) => {
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email
+                email: user.email,
+                avatar: user.avatar
             }
         });
     } catch (error) {
