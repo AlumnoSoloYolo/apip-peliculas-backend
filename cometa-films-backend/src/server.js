@@ -6,6 +6,7 @@ const config = require('./config/config');
 // Importamos las rutas
 const authRoutes = require('./routes/auth.routes');
 const userMovieRoutes = require('./routes/userMovieRoutes');
+const userSocialRoutes = require('./routes/userSocialRoutes');
 
 
 const app = express();
@@ -22,6 +23,7 @@ mongoose.connect(config.mongodb.uri)
 // Rutas
 app.use('/auth', authRoutes);
 app.use('/user-movies', userMovieRoutes);
+app.use('/social', userSocialRoutes);
 
 
 // Manejador de errores global
@@ -29,7 +31,7 @@ app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({
         message: 'Algo salió mal!',
-        error: process.env.NODE_ENV === 'development' ? err.message : {}
+        // error: process.env.NODE_ENV === 'development' ? err.message : {}
     });
 });
 

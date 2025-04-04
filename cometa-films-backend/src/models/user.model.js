@@ -61,9 +61,19 @@ const userSchema = new mongoose.Schema({
             type: Date,
             default: Date.now
         }
+    }],
+    // Lista de usuarios que este usuario sigue
+    following: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+    // Lista de usuarios que siguen a este usuario
+    followers: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
     }]
 }, {
-    timestamps: true // Esto añadirá automáticamente createdAt y updatedAt
+    timestamps: true
 });
 
 module.exports = mongoose.model('User', userSchema);
