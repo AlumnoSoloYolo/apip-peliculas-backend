@@ -7,6 +7,7 @@ const config = require('./config/config');
 const authRoutes = require('./routes/auth.routes');
 const userMovieRoutes = require('./routes/userMovieRoutes');
 const userSocialRoutes = require('./routes/userSocialRoutes');
+const commentRoutes = require('./routes/commentRoutes');
 
 
 const app = express();
@@ -24,6 +25,7 @@ mongoose.connect(config.mongodb.uri)
 app.use('/auth', authRoutes);
 app.use('/user-movies', userMovieRoutes);
 app.use('/social', userSocialRoutes);
+app.use('/comments', commentRoutes);
 
 
 // Manejador de errores global

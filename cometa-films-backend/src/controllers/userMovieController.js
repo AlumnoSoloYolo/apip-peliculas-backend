@@ -1,4 +1,4 @@
-// backend/controllers/userMovieController.js
+const mongoose = require('mongoose');
 const User = require('../models/user.model');
 
 exports.addPeliPendiente = async (req, res) => {
@@ -245,6 +245,49 @@ exports.getUserReviews = async (req, res) => {
 };
 
 
+exports.getReviewsByMovieId = async (req, res) => {
+    try {
+        const movieId = req.params.movieId;
+
+        console.log(`Solicitud recibida para obtener reseñas de la película con ID: ${movieId}`);
+
+        // Buscar todos los usuarios que tienen reseñas para la película solicitada
+        const usersWithReviews = await User.find({ 'reviews.movieId': movieId }, 'reviews username avatar');
+
+        console.log(`Se encontraron ${usersWithReviews.length} usuarios con reseñas para la película ID: ${movieId}`);
+
+        // Obtener todas las reseñas de esa película
+        const reviews = usersWithReviews.flatMap(user =>
+            user.reviews.filter(review => review.movieId === movieId).map(review => ({
+                username: user.username,
+                avatar: user.avatar,
+                rating: review.rating,
+                comment: review.comment,
+                createdAt: review.createdAt
+            }))
+        );
+
+        console.log(`Se encontraron ${reviews.length} reseñas para la película ID: ${movieId}`);
+
+        if (reviews.length === 0) {
+            console.log(`No se encontraron reseñas para la película con ID: ${movieId}`);
+            return res.status(404).json({ message: 'No se encontraron reseñas para esta película' });
+        }
+
+        // Devolver las reseñas
+        res.json(reviews);
+
+    } catch (error) {
+        console.error(`Error al obtener las reseñas para la película con ID: ${req.params.movieId}`, error);
+        res.status(500).json({
+            message: 'Error al obtener las reseñas',
+            error: error.message
+        });
+    }
+};
+
+
+
 
 exports.getMovieReviews = async (req, res) => {
     try {
@@ -253,26 +296,28 @@ exports.getMovieReviews = async (req, res) => {
         // Buscamos todos los usuarios que tienen una reseña para esta película
         const users = await User.find({
             'reviews.movieId': movieId
-        }).select('username avatar reviews'); // Incluimos avatar en la selección
+        }).select('username avatar reviews'); // Incluimos avatar y las reseñas en la selección
 
         // Filtramos y formateamos las reseñas
-        const movieReviews = users.map(user => {
-            const review = user.reviews.find(r => r.movieId === movieId);
-            return {
-                username: user.username,
-                avatar: user.avatar, // Incluir el avatar del usuario
-                reviewId: review._id,
-                movieId: review.movieId,
-                rating: review.rating,
-                comment: review.comment,
-                createdAt: review.createdAt,
-                userId: user._id
-            };
-        });
+        const movieReviews = users.flatMap(user =>
+            user.reviews
+                .filter(review => review.movieId === movieId)
+                .map(review => ({
+                    username: user.username,
+                    avatar: user.avatar, // Incluir el avatar del usuario
+                    reviewId: review._id, // Aseguramos que el reviewId esté presente
+                    movieId: review.movieId,
+                    rating: review.rating,
+                    comment: review.comment,
+                    createdAt: review.createdAt,
+                    userId: user._id
+                }))
+        );
 
         // Ordenamos las reseñas por fecha, las más recientes primero
         movieReviews.sort((a, b) => b.createdAt - a.createdAt);
 
+        // Respondemos con el total de reseñas y las reseñas formateadas
         res.json({
             movie: movieId,
             totalReviews: movieReviews.length,
@@ -280,6 +325,7 @@ exports.getMovieReviews = async (req, res) => {
         });
 
     } catch (error) {
+        console.error('Error al obtener las reseñas de la película:', error);
         res.status(500).json({
             message: 'Error al obtener las reseñas de la película',
             error: error.message
@@ -287,27 +333,94 @@ exports.getMovieReviews = async (req, res) => {
     }
 };
 
+
 // // Obtener una reseña específica
-// exports.getReview = async (req, res) => {
-//     try {
-//         const { movieId } = req.params;
-//         const userId = req.user.id;
+exports.getReview = async (req, res) => {
+    try {
+        const { movieId, reviewId } = req.params;
 
-//         const user = await User.findById(userId);
-//         const review = user.reviews.find(r => r.movieId === movieId);
+        // Buscar la reseña específica
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
 
-//         if (!review) {
-//             return res.status(404).json({ message: 'Reseña no encontrada' });
-//         }
+        // Buscar en todas las reseñas (no solo las del usuario actual)
+        const allUsersWithReview = await User.find({
+            "reviews._id": reviewId,
+            "reviews.movieId": movieId
+        }).select('username avatar reviews');
 
-//         res.json(review);
-//     } catch (error) {
-//         res.status(500).json({
-//             message: 'Error al obtener la reseña',
-//             error: error.message
-//         });
-//     }
-// };
+        if (allUsersWithReview.length === 0) {
+            return res.status(404).json({ message: 'Reseña no encontrada' });
+        }
+
+        // Encontrar la reseña específica
+        const userWithReview = allUsersWithReview[0];
+        const review = userWithReview.reviews.find(
+            r => r._id.toString() === reviewId && r.movieId === movieId
+        );
+
+        if (!review) {
+            return res.status(404).json({ message: 'Reseña no encontrada' });
+        }
+
+        // Devolver la reseña con datos del usuario
+        res.json({
+            _id: review._id,
+            movieId: review.movieId,
+            rating: review.rating,
+            comment: review.comment,
+            createdAt: review.createdAt,
+            username: userWithReview.username,
+            avatar: userWithReview.avatar,
+            userId: userWithReview._id
+        });
+    } catch (error) {
+        console.error('Error al obtener reseña:', error);
+        res.status(500).json({
+            message: 'Error al obtener reseña',
+            error: error.message
+        });
+    }
+};
+
+
+exports.getReviewById = async (req, res) => {
+    try {
+        const { reviewId } = req.params;
+
+        const objectId = new mongoose.Types.ObjectId(reviewId);
+
+        const user = await User.findOne(
+            { "reviews._id": objectId },
+            { "username": 1, "avatar": 1, "reviews.$": 1 }
+        );
+
+        if (!user || !user.reviews || user.reviews.length === 0) {
+            return res.status(404).json({ message: 'Reseña no encontrada' });
+        }
+
+        const review = user.reviews[0];
+
+        res.json({
+            _id: review._id,
+            movieId: review.movieId,
+            rating: review.rating,
+            comment: review.comment,
+            createdAt: review.createdAt,
+            username: user.username,
+            avatar: user.avatar,
+            userId: user._id
+        });
+    } catch (error) {
+        console.error('Error al obtener reseña:', error);
+        res.status(500).json({
+            message: 'Error al obtener reseña',
+            error: error.message
+        });
+    }
+};
 
 // Actualizar una reseña
 exports.updateReview = async (req, res) => {

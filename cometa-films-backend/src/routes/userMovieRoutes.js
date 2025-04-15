@@ -10,7 +10,7 @@ const {
     removePeliPendiente,
     removePeliVista,
     getUserReviews,
-    getReview,
+    getReviewById,
     getMovieReviews,
     updateReview,
     deleteReview
@@ -24,9 +24,10 @@ router.post('/watched', addPeliVista);
 router.delete('/watchlist', removePeliPendiente);
 router.delete('/watched', removePeliVista);
 router.get('/profile', getUserProfile);
-
+router.get('/reviews/:reviewId', getReviewById);
 router.get('/reviews', getUserReviews);
-// router.get('/reviews/:movieId', getReview);
+// router.get('/reviews/:movieId', getReviewsByMovieId);
+// router.get('/movies/:movieId/reviews/:reviewId', getReview);
 router.post('/reviews', addReview);
 router.put('/reviews/:movieId', updateReview);
 router.delete('/reviews/:movieId', deleteReview);
