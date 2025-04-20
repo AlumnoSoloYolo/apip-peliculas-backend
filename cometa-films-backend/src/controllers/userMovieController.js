@@ -1,38 +1,40 @@
 const mongoose = require('mongoose');
 const User = require('../models/user.model');
+const Watchlist = require('../models/watchlist.model');
+const Watched = require('../models/watched.model');
+const Review = require('../models/review.model');
+const Comment = require('../models/comment.model');
 
 exports.addPeliPendiente = async (req, res) => {
     try {
         const { movieId } = req.body;
-        const userId = req.user.id; // Esto vendrá del middleware de autenticación
+        const userId = req.user.id;
 
-        // Verificamos si la película ya está en la lista de pendientes
-        const user = await User.findById(userId);
-        const yaExiste = user.pelisPendientes.some(peli => peli.movieId === movieId);
+        // Eliminar de películas vistas si está ahí
+        await Watched.findOneAndDelete({ userId, movieId });
 
-        if (yaExiste) {
+        // Verificar si la película ya está en la lista de pendientes
+        const existingMovie = await Watchlist.findOne({ userId, movieId });
+
+        if (existingMovie) {
             return res.status(400).json({
                 message: 'Esta película ya está en tu lista de pendientes'
             });
         }
 
-        // Añadimos la película a la lista
-        const updatedUser = await User.findByIdAndUpdate(
+        // Crear una nueva entrada en la watchlist
+        const newWatchlistItem = await Watchlist.create({
             userId,
-            {
-                $push: {
-                    pelisPendientes: {
-                        movieId,
-                        addedAt: new Date()
-                    }
-                }
-            },
-            { new: true } // Esto hace que nos devuelva el documento actualizado
-        );
+            movieId,
+            addedAt: new Date()
+        });
+
+        // Recuperar la lista actualizada para mantener el formato anterior
+        const pelisPendientes = await Watchlist.find({ userId });
 
         res.json({
             message: 'Película añadida a pendientes',
-            pelisPendientes: updatedUser.pelisPendientes
+            pelisPendientes
         });
 
     } catch (error) {
@@ -48,24 +50,29 @@ exports.addPeliVista = async (req, res) => {
         const { movieId } = req.body;
         const userId = req.user.id;
 
-        // Eliminamos de pendientes y añadimos a vistas
-        const updatedUser = await User.findByIdAndUpdate(
+        // Eliminar de pendientes
+        await Watchlist.findOneAndDelete({ userId, movieId });
+
+        // Verificar si ya está en películas vistas
+        const existingWatched = await Watched.findOne({ userId, movieId });
+
+        if (existingWatched) {
+            return res.json({
+                message: 'Esta película ya estaba marcada como vista',
+                watchedItem: existingWatched
+            });
+        }
+
+        // Añadir a vistas
+        const newWatchedItem = await Watched.create({
             userId,
-            {
-                $pull: { pelisPendientes: { movieId } },
-                $push: {
-                    pelisVistas: {
-                        movieId,
-                        watchedAt: new Date()
-                    }
-                }
-            },
-            { new: true }
-        );
+            movieId,
+            watchedAt: new Date()
+        });
 
         res.json({
             message: 'Película marcada como vista',
-            user: updatedUser
+            watchedItem: newWatchedItem
         });
     } catch (error) {
         res.status(500).json({
@@ -76,50 +83,41 @@ exports.addPeliVista = async (req, res) => {
 };
 
 exports.addReview = async (req, res) => {
-    console.log('Entrando a addReview');
-    console.log('Body recibido:', req.body);
-    console.log('Usuario:', req.user);
-
     try {
         const { movieId, rating, comment } = req.body;
         const userId = req.user.id;
-        const username = req.user.username; // Nombre del usuario autenticado
-        const avatar = req.user.avatar; // Avatar del usuario autenticado
 
-        // Verificamos si ya existe una reseña para esta película
-        const user = await User.findById(userId);
-        const reviewExistente = user.reviews.find(review => review.movieId === movieId);
+        // Verificar si ya existe una reseña para esta película
+        const existingReview = await Review.findOne({ userId, movieId });
 
-        if (reviewExistente) {
+        if (existingReview) {
             return res.status(400).json({
                 message: 'Ya has publicado una reseña para esta película'
             });
         }
 
-        // Añadimos la reseña con todos los campos necesarios
-        const updatedUser = await User.findByIdAndUpdate(
-            userId,
-            {
-                $push: {
-                    reviews: {
-                        movieId,
-                        rating,
-                        comment,
-                        username,
-                        avatar,
-                        createdAt: new Date()
-                    }
-                }
-            },
-            { new: true } // Esto hace que nos devuelva el documento actualizado
-        );
+        // Obtener datos adicionales del usuario para incluir en la respuesta
+        const user = await User.findById(userId).select('username avatar');
 
-        // Buscamos la reseña recién creada para devolverla en la respuesta
-        const nuevaReview = updatedUser.reviews.find(r => r.movieId === movieId);
+        // Crear nueva reseña
+        const newReview = await Review.create({
+            userId,
+            movieId,
+            rating,
+            comment,
+            createdAt: new Date()
+        });
+
+        // Añadir datos del usuario para la respuesta (ya que el frontend los espera)
+        const reviewWithUserInfo = {
+            ...newReview.toObject(),
+            username: user.username,
+            avatar: user.avatar
+        };
 
         res.json({
             message: 'Reseña añadida correctamente',
-            review: nuevaReview
+            review: reviewWithUserInfo
         });
 
     } catch (error) {
@@ -130,20 +128,36 @@ exports.addReview = async (req, res) => {
     }
 };
 
-
 exports.getUserProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const user = await User.findById(userId)
-            .select('-password')
-            .lean();
+
+        // Buscar usuario
+        const user = await User.findById(userId).select('-password');
 
         if (!user) {
             return res.status(404).json({ message: 'Usuario no encontrado' });
         }
 
-        console.log('Enviando datos de usuario:', user);
-        res.json(user);
+        // Buscar películas pendientes
+        const pelisPendientes = await Watchlist.find({ userId }).lean();
+
+        // Buscar películas vistas
+        const pelisVistas = await Watched.find({ userId }).lean();
+
+        // Buscar reseñas
+        const reviews = await Review.find({ userId }).lean();
+
+        // Construir la respuesta con el mismo formato que esperaba el frontend
+        const userProfile = {
+            ...user.toObject(),
+            pelisPendientes,
+            pelisVistas,
+            reviews
+        };
+
+        console.log('Enviando datos de usuario:', userProfile);
+        res.json(userProfile);
     } catch (error) {
         console.error('Error al obtener perfil:', error);
         res.status(500).json({
@@ -153,21 +167,50 @@ exports.getUserProfile = async (req, res) => {
     }
 };
 
-
-exports.removePeliPendiente = async (req, res) => {
+exports.updateUserProfile = async (req, res) => {
     try {
-        const { movieId } = req.body;
+        const { username, avatar, biografia, perfilPrivado } = req.body;
         const userId = req.user.id;
 
-        // Eliminamos la película de la lista de pendientes
+        // Validaciones
+        if (username) {
+            // Verificar si el nuevo username ya existe
+            const existingUser = await User.findOne({
+                username,
+                _id: { $ne: userId }
+            });
+
+            if (existingUser) {
+                return res.status(400).json({
+                    message: 'Este nombre de usuario ya está en uso'
+                });
+            }
+        }
+
+        // Validar avatar
+        const validAvatars = ['avatar1', 'avatar2', 'avatar3', 'avatar4',
+            'avatar5', 'avatar6', 'avatar7', 'avatar8'];
+
+        if (avatar && !validAvatars.includes(avatar)) {
+            return res.status(400).json({
+                message: 'Avatar no válido'
+            });
+        }
+
+        // Preparar objeto de actualización
+        const updateData = {};
+        if (username) updateData.username = username;
+        if (avatar) updateData.avatar = avatar;
+
+        // Añadir los nuevos campos
+        if (biografia !== undefined) updateData.biografia = biografia;
+        if (perfilPrivado !== undefined) updateData.perfilPrivado = perfilPrivado;
+
+        // Actualizar usuario
         const updatedUser = await User.findByIdAndUpdate(
             userId,
-            {
-                $pull: {
-                    pelisPendientes: { movieId }
-                }
-            },
-            { new: true }
+            updateData,
+            { new: true, select: '-password' }
         );
 
         if (!updatedUser) {
@@ -176,9 +219,71 @@ exports.removePeliPendiente = async (req, res) => {
             });
         }
 
+        res.json(updatedUser);
+    } catch (error) {
+        console.error('Error al actualizar perfil:', error);
+        res.status(500).json({
+            message: 'Error al actualizar perfil',
+            error: error.message
+        });
+    }
+};
+
+exports.deleteAccount = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Eliminar todas las entradas relacionadas
+        await Watchlist.deleteMany({ userId });
+        await Watched.deleteMany({ userId });
+
+        // Eliminar reseñas y comentarios asociados
+        const userReviews = await Review.find({ userId });
+        for (const review of userReviews) {
+            await Comment.deleteMany({ reviewId: review._id });
+        }
+        await Review.deleteMany({ userId });
+
+        // Eliminar relaciones de seguimiento
+        await Follow.deleteMany({ follower: userId });
+        await Follow.deleteMany({ following: userId });
+
+
+        // eliminar el usuario
+        await User.findByIdAndDelete(userId);
+
+        res.json({
+            message: 'Cuenta eliminada correctamente'
+        });
+    } catch (error) {
+        console.error('Error al eliminar cuenta:', error);
+        res.status(500).json({
+            message: 'Error al eliminar cuenta',
+            error: error.message
+        });
+    }
+};
+
+exports.removePeliPendiente = async (req, res) => {
+    try {
+        const { movieId } = req.body;
+        const userId = req.user.id;
+
+        // Eliminar la película de la lista de pendientes
+        const result = await Watchlist.findOneAndDelete({ userId, movieId });
+
+        if (!result) {
+            return res.status(404).json({
+                message: 'Película no encontrada en la lista de pendientes'
+            });
+        }
+
+        // Recuperar la lista actualizada
+        const pelisPendientes = await Watchlist.find({ userId });
+
         res.json({
             message: 'Película eliminada de pendientes',
-            pelisPendientes: updatedUser.pelisPendientes
+            pelisPendientes
         });
 
     } catch (error) {
@@ -194,26 +299,21 @@ exports.removePeliVista = async (req, res) => {
         const { movieId } = req.body;
         const userId = req.user.id;
 
-        // Eliminamos la película de la lista de vistas
-        const updatedUser = await User.findByIdAndUpdate(
-            userId,
-            {
-                $pull: {
-                    pelisVistas: { movieId }
-                }
-            },
-            { new: true }
-        );
+        // Eliminar la película de la lista de vistas
+        const result = await Watched.findOneAndDelete({ userId, movieId });
 
-        if (!updatedUser) {
+        if (!result) {
             return res.status(404).json({
-                message: 'Usuario no encontrado'
+                message: 'Película no encontrada en la lista de vistas'
             });
         }
 
+        // Recuperar la lista actualizada
+        const pelisVistas = await Watched.find({ userId });
+
         res.json({
             message: 'Película eliminada de vistas',
-            pelisVistas: updatedUser.pelisVistas
+            pelisVistas
         });
 
     } catch (error) {
@@ -224,104 +324,48 @@ exports.removePeliVista = async (req, res) => {
     }
 };
 
-
-
 exports.getUserReviews = async (req, res) => {
     try {
         const userId = req.user.id;
-        const user = await User.findById(userId);
 
-        if (!user) {
-            return res.status(404).json({ message: 'Usuario no encontrado' });
-        }
+        // Buscar todas las reseñas del usuario
+        const reviews = await Review.find({ userId }).sort({ createdAt: -1 });
 
-        res.json(user.reviews);
-    } catch (error) {
-        res.status(500).json({
-            message: 'Error al obtener las reseñas',
-            error: error.message
-        });
-    }
-};
-
-
-exports.getReviewsByMovieId = async (req, res) => {
-    try {
-        const movieId = req.params.movieId;
-
-        console.log(`Solicitud recibida para obtener reseñas de la película con ID: ${movieId}`);
-
-        // Buscar todos los usuarios que tienen reseñas para la película solicitada
-        const usersWithReviews = await User.find({ 'reviews.movieId': movieId }, 'reviews username avatar');
-
-        console.log(`Se encontraron ${usersWithReviews.length} usuarios con reseñas para la película ID: ${movieId}`);
-
-        // Obtener todas las reseñas de esa película
-        const reviews = usersWithReviews.flatMap(user =>
-            user.reviews.filter(review => review.movieId === movieId).map(review => ({
-                username: user.username,
-                avatar: user.avatar,
-                rating: review.rating,
-                comment: review.comment,
-                createdAt: review.createdAt
-            }))
-        );
-
-        console.log(`Se encontraron ${reviews.length} reseñas para la película ID: ${movieId}`);
-
-        if (reviews.length === 0) {
-            console.log(`No se encontraron reseñas para la película con ID: ${movieId}`);
-            return res.status(404).json({ message: 'No se encontraron reseñas para esta película' });
-        }
-
-        // Devolver las reseñas
         res.json(reviews);
-
     } catch (error) {
-        console.error(`Error al obtener las reseñas para la película con ID: ${req.params.movieId}`, error);
         res.status(500).json({
             message: 'Error al obtener las reseñas',
             error: error.message
         });
     }
 };
-
-
-
 
 exports.getMovieReviews = async (req, res) => {
     try {
         const { movieId } = req.params;
 
-        // Buscamos todos los usuarios que tienen una reseña para esta película
-        const users = await User.find({
-            'reviews.movieId': movieId
-        }).select('username avatar reviews'); // Incluimos avatar y las reseñas en la selección
+        // Buscar todas las reseñas para la película
+        const reviews = await Review.find({ movieId }).sort({ createdAt: -1 });
 
-        // Filtramos y formateamos las reseñas
-        const movieReviews = users.flatMap(user =>
-            user.reviews
-                .filter(review => review.movieId === movieId)
-                .map(review => ({
-                    username: user.username,
-                    avatar: user.avatar, // Incluir el avatar del usuario
-                    reviewId: review._id, // Aseguramos que el reviewId esté presente
-                    movieId: review.movieId,
-                    rating: review.rating,
-                    comment: review.comment,
-                    createdAt: review.createdAt,
-                    userId: user._id
-                }))
-        );
+        // Enriquecer con datos de usuario (username, avatar)
+        const enrichedReviews = await Promise.all(reviews.map(async (review) => {
+            const user = await User.findById(review.userId).select('username avatar');
+            return {
+                username: user.username,
+                avatar: user.avatar,
+                reviewId: review._id,
+                movieId: review.movieId,
+                rating: review.rating,
+                comment: review.comment,
+                createdAt: review.createdAt,
+                userId: review.userId
+            };
+        }));
 
-        // Ordenamos las reseñas por fecha, las más recientes primero
-        movieReviews.sort((a, b) => b.createdAt - a.createdAt);
-
-        // Respondemos con el total de reseñas y las reseñas formateadas
         res.json({
             movie: movieId,
-            totalReviews: movieReviews.length,
-            reviews: movieReviews
+            totalReviews: reviews.length,
+            reviews: enrichedReviews
         });
 
     } catch (error) {
@@ -333,75 +377,19 @@ exports.getMovieReviews = async (req, res) => {
     }
 };
 
-
-// // Obtener una reseña específica
-exports.getReview = async (req, res) => {
+exports.getReviewById = async (req, res) => {
     try {
-        const { movieId, reviewId } = req.params;
+        const { reviewId } = req.params;
 
-        // Buscar la reseña específica
-        const user = await User.findById(req.user.id);
-        if (!user) {
-            return res.status(404).json({ message: 'Usuario no encontrado' });
-        }
-
-        // Buscar en todas las reseñas (no solo las del usuario actual)
-        const allUsersWithReview = await User.find({
-            "reviews._id": reviewId,
-            "reviews.movieId": movieId
-        }).select('username avatar reviews');
-
-        if (allUsersWithReview.length === 0) {
-            return res.status(404).json({ message: 'Reseña no encontrada' });
-        }
-
-        // Encontrar la reseña específica
-        const userWithReview = allUsersWithReview[0];
-        const review = userWithReview.reviews.find(
-            r => r._id.toString() === reviewId && r.movieId === movieId
-        );
+        // Buscar la reseña por ID
+        const review = await Review.findById(reviewId);
 
         if (!review) {
             return res.status(404).json({ message: 'Reseña no encontrada' });
         }
 
-        // Devolver la reseña con datos del usuario
-        res.json({
-            _id: review._id,
-            movieId: review.movieId,
-            rating: review.rating,
-            comment: review.comment,
-            createdAt: review.createdAt,
-            username: userWithReview.username,
-            avatar: userWithReview.avatar,
-            userId: userWithReview._id
-        });
-    } catch (error) {
-        console.error('Error al obtener reseña:', error);
-        res.status(500).json({
-            message: 'Error al obtener reseña',
-            error: error.message
-        });
-    }
-};
-
-
-exports.getReviewById = async (req, res) => {
-    try {
-        const { reviewId } = req.params;
-
-        const objectId = new mongoose.Types.ObjectId(reviewId);
-
-        const user = await User.findOne(
-            { "reviews._id": objectId },
-            { "username": 1, "avatar": 1, "reviews.$": 1 }
-        );
-
-        if (!user || !user.reviews || user.reviews.length === 0) {
-            return res.status(404).json({ message: 'Reseña no encontrada' });
-        }
-
-        const review = user.reviews[0];
+        // Enriquecer con datos del usuario
+        const user = await User.findById(review.userId).select('username avatar');
 
         res.json({
             _id: review._id,
@@ -411,7 +399,7 @@ exports.getReviewById = async (req, res) => {
             createdAt: review.createdAt,
             username: user.username,
             avatar: user.avatar,
-            userId: user._id
+            userId: review.userId
         });
     } catch (error) {
         console.error('Error al obtener reseña:', error);
@@ -422,43 +410,39 @@ exports.getReviewById = async (req, res) => {
     }
 };
 
-// Actualizar una reseña
 exports.updateReview = async (req, res) => {
     try {
-        const { movieId } = req.params; // Obtener el movieId de los parámetros de la ruta
-        const { rating, comment } = req.body; // Obtener el rating y el comment del cuerpo de la solicitud
-        const userId = req.user.id; // Obtener el userId del usuario autenticado
+        const { movieId } = req.params;
+        const { rating, comment } = req.body;
+        const userId = req.user.id;
 
-        // Buscar el usuario en la base de datos
-        const user = await User.findById(userId);
+        // Buscar y actualizar la reseña
+        const updatedReview = await Review.findOneAndUpdate(
+            { userId, movieId },
+            {
+                rating,
+                comment,
+                updatedAt: new Date()
+            },
+            { new: true }
+        );
 
-        // Encontrar el índice de la reseña que coincide con el movieId
-        const reviewIndex = user.reviews.findIndex(r => r.movieId === movieId);
-
-        // Si no se encuentra la reseña, devolver un error
-        if (reviewIndex === -1) {
+        if (!updatedReview) {
             return res.status(404).json({ message: 'Reseña no encontrada' });
         }
 
-        // Actualizar la reseña manteniendo el movieId
-        user.reviews[reviewIndex] = {
-            ...user.reviews[reviewIndex], // Mantener todos los campos existentes
-            movieId: user.reviews[reviewIndex].movieId, // Asegurarse de que el movieId se mantenga
-            rating,
-            comment,
-            updatedAt: new Date() // Actualizar la fecha de modificación
-        };
+        // Enriquecer con datos del usuario para la respuesta
+        const user = await User.findById(userId).select('username avatar');
 
-        // Guardar los cambios en la base de datos
-        await user.save();
-
-        // Devolver la reseña actualizada
         res.json({
             message: 'Reseña actualizada correctamente',
-            review: user.reviews[reviewIndex] // Incluir el movieId en la respuesta
+            review: {
+                ...updatedReview.toObject(),
+                username: user.username,
+                avatar: user.avatar
+            }
         });
     } catch (error) {
-        // Manejar errores
         res.status(500).json({
             message: 'Error al actualizar la reseña',
             error: error.message
@@ -466,25 +450,23 @@ exports.updateReview = async (req, res) => {
     }
 };
 
-// Eliminar una reseña
 exports.deleteReview = async (req, res) => {
     try {
         const { movieId } = req.params;
         const userId = req.user.id;
 
-        const updatedUser = await User.findByIdAndUpdate(
-            userId,
-            {
-                $pull: {
-                    reviews: { movieId }
-                }
-            },
-            { new: true }
-        );
+        // Buscar la reseña
+        const review = await Review.findOne({ userId, movieId });
 
-        if (!updatedUser) {
-            return res.status(404).json({ message: 'Usuario no encontrado' });
+        if (!review) {
+            return res.status(404).json({ message: 'Reseña no encontrada' });
         }
+
+        // Eliminar los comentarios asociados a la reseña
+        await Comment.deleteMany({ reviewId: review._id });
+
+        // Eliminar la reseña
+        await Review.findByIdAndDelete(review._id);
 
         res.json({
             message: 'Reseña eliminada correctamente'

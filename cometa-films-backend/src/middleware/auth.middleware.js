@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
+const config = require('../config/config');
 
 exports.auth = async (req, res, next) => {
     try {
@@ -9,12 +10,13 @@ exports.auth = async (req, res, next) => {
         }
 
         const token = authHeader.replace('Bearer ', '');
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, config.jwt.secret);
 
         const user = await User.findById(decoded.id).select('-password');
         if (!user) {
             throw new Error('Usuario no encontrado');
         }
+
 
         req.user = user;
         next();

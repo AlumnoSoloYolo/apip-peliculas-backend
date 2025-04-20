@@ -15,7 +15,7 @@ const registerUser = async (req, res) => {
             });
         }
 
-        // comprobar si esxite
+        // comprobar si existe
         const userExists = await User.findOne({
             $or: [{ email }, { username }]
         });
@@ -31,7 +31,7 @@ const registerUser = async (req, res) => {
             'avatar5', 'avatar6', 'avatar7', 'avatar8'];
         const finalAvatar = validAvatars.includes(avatar) ? avatar : 'avatar1';
 
-        // Create new user with enhanced security
+        // hashear la contraseña
         const salt = await bcrypt.genSalt(12);
         const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -40,12 +40,11 @@ const registerUser = async (req, res) => {
             email,
             password: hashedPassword,
             avatar: finalAvatar,
-            watchedMovies: [],
-            watchlist: [],
-            reviews: []
+            following: [],
+            followers: []
         });
 
-        // Generate JWT token
+        // Generar JWT token
         const token = jwt.sign(
             { id: user._id },
             process.env.JWT_SECRET,
@@ -79,7 +78,7 @@ const registerUser = async (req, res) => {
             });
         }
 
-        // Manejo de errores de duplicado (índices únicos)
+        // Manejo de errores de duplicado de índices
         if (error.code === 11000) {
             return res.status(400).json({
                 message: 'Ya existe un usuario con este email o username'

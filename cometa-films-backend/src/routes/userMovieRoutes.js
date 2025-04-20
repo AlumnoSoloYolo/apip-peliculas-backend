@@ -13,7 +13,9 @@ const {
     getReviewById,
     getMovieReviews,
     updateReview,
-    deleteReview
+    deleteReview,
+    updateUserProfile,
+    deleteAccount
 } = require('../controllers/userMovieController');
 
 // Todas las rutas requieren autenticación
@@ -24,6 +26,8 @@ router.post('/watched', addPeliVista);
 router.delete('/watchlist', removePeliPendiente);
 router.delete('/watched', removePeliVista);
 router.get('/profile', getUserProfile);
+router.put('/profile/update', auth, updateUserProfile);
+router.delete('/profile/delete', auth, deleteAccount);
 router.get('/reviews/:reviewId', getReviewById);
 router.get('/reviews', getUserReviews);
 // router.get('/reviews/:movieId', getReviewsByMovieId);
