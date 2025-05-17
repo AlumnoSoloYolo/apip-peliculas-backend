@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const http = require('http');
+const initializeSocketServer = require('./socket');
 const config = require('./config/config');
 
 // Importamos las rutas
@@ -10,8 +12,10 @@ const userSocialRoutes = require('./routes/userSocialRoutes');
 const commentRoutes = require('./routes/commentRoutes');
 const movieListRoutes = require('./routes/movieListRoutes');
 const likeRoutes = require('./routes/likeRoutes');
+const activityRoutes = require('./routes/activityRoutes'); // Nueva ruta para actividades
 
 const app = express();
+const server = http.createServer(app); // Crear servidor HTTP
 
 // Middleware
 app.use(cors());
@@ -25,6 +29,9 @@ mongoose.connect(config.mongodb.uri, {
     .then(() => console.log('Conectado a MongoDB'))
     .catch(err => console.error('Error conectando a MongoDB:', err));
 
+// Inicializar Socket.IO
+const io = initializeSocketServer(server);
+
 // Rutas 
 app.use('/auth', authRoutes);
 app.use('/user-movies', userMovieRoutes);
@@ -32,6 +39,7 @@ app.use('/social', userSocialRoutes);
 app.use('/comments', commentRoutes);
 app.use('/movie-lists', movieListRoutes);
 app.use('/likes', likeRoutes);
+app.use('/activity', activityRoutes); // Nueva ruta para actividades
 
 // Ruta para prueba de salud del API
 app.get('/', (req, res) => {
@@ -47,7 +55,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Iniciamos el servidor
-app.listen(config.port, () => {
+// Iniciamos el servidor con HTTP en lugar de Express directamente
+server.listen(config.port, () => {
     console.log(`Servidor corriendo en el puerto ${config.port}`);
 });

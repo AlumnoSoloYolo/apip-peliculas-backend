@@ -1,10 +1,11 @@
-
 const Follow = require('../models/follow.model');
 const User = require('../models/user.model');
 const Watchlist = require('../models/watchlist.model');
 const Watched = require('../models/watched.model');
 const Review = require('../models/review.model');
 const FollowRequest = require('../models/follow-request.model');
+const activityService = require('../services/activity.service');
+const socket = require('../socket');
 
 // Obtener todos los usuarios
 exports.getAllUsers = async (req, res) => {
@@ -250,16 +251,50 @@ exports.followUser = async (req, res) => {
                 recipient: userId
             });
 
+            // Obtener información del solicitante para la notificación
+            const requesterInfo = await User.findById(currentUserId).select('username avatar');
+
+            // Datos para enviar en la notificación
+            const requestData = {
+                requestId: newRequest._id,
+                requester: {
+                    userId: currentUserId,
+                    username: requesterInfo.username,
+                    avatar: requesterInfo.avatar
+                },
+                timestamp: new Date()
+            };
+
+            // Verificar que la función existe antes de llamarla
+            let notificationSent = false;
+            if (typeof socket.sendFollowRequest === 'function') {
+                notificationSent = socket.sendFollowRequest(userId, requestData);
+            } else {
+                console.log('La función sendFollowRequest no está disponible');
+            }
+
             return res.status(201).json({
                 message: 'Solicitud de seguimiento enviada',
                 status: 'requested',
-                requestId: newRequest._id
+                requestId: newRequest._id,
+                notificationSent
             });
         } else {
             // Si no es privado, seguir directamente
             await Follow.create({
                 follower: currentUserId,
                 following: userId
+            });
+
+            // Registrar actividad de seguimiento
+            await activityService.registerActivity({
+                userId: currentUserId,
+                actionType: 'followed_user',
+                targetUser: {
+                    userId: userId,
+                    username: userToFollow.username,
+                    avatar: userToFollow.avatar
+                }
             });
 
             return res.status(201).json({
@@ -275,9 +310,6 @@ exports.followUser = async (req, res) => {
         });
     }
 };
-
-
-
 
 // Dejar de seguir a un usuario
 exports.unfollowUser = async (req, res) => {
@@ -315,8 +347,6 @@ exports.unfollowUser = async (req, res) => {
         });
     }
 };
-
-
 
 // función para obtener solicitudes pendientes
 exports.getPendingRequests = async (req, res) => {
@@ -367,6 +397,21 @@ exports.acceptFollowRequest = async (req, res) => {
             following: request.recipient
         });
 
+        // Obtener información de los usuarios para la actividad
+        const requesterUser = await User.findById(request.requester).select('username avatar');
+        const recipientUser = await User.findById(request.recipient).select('username avatar');
+
+        // Registrar actividad de seguimiento
+        await activityService.registerActivity({
+            userId: request.requester,
+            actionType: 'followed_user',
+            targetUser: {
+                userId: request.recipient,
+                username: recipientUser.username,
+                avatar: recipientUser.avatar
+            }
+        });
+
         res.json({ message: 'Solicitud aceptada' });
     } catch (error) {
         console.error('Error al aceptar solicitud:', error);
@@ -408,7 +453,6 @@ exports.rejectFollowRequest = async (req, res) => {
         });
     }
 };
-
 
 // cancelar una solicitud pendiente
 exports.cancelFollowRequest = async (req, res) => {
@@ -485,7 +529,6 @@ exports.getFollowStatus = async (req, res) => {
         });
     }
 };
-
 
 exports.getUserFollowers = async (req, res) => {
     try {

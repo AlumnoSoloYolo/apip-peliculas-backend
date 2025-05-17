@@ -4,6 +4,8 @@ const Review = require('../models/review.model');
 const Comment = require('../models/comment.model');
 const MovieList = require('../models/movie-list.model');
 const mongoose = require('mongoose');
+const activityService = require('../services/activity.service');
+const tmdbService = require('../services/tmdb.service');
 
 // Dar like a un contenido
 exports.toggleLike = async (req, res) => {
@@ -55,6 +57,8 @@ exports.toggleLike = async (req, res) => {
         // Si ya existe, lo eliminamos (toggle)
         if (existingLike) {
             await Like.findByIdAndDelete(existingLike._id);
+
+
             return res.json({
                 message: 'Like eliminado',
                 liked: false
@@ -67,6 +71,41 @@ exports.toggleLike = async (req, res) => {
             contentType,
             contentId
         });
+
+        // Registrar actividad según el tipo de contenido
+        if (contentType === 'review') {
+            const review = await Review.findById(contentId).populate('userId', 'username');
+            const movie = await tmdbService.getMovieDetails(review.movieId);
+
+            await activityService.registerActivity({
+                userId,
+                actionType: 'liked_review',
+                review: {
+                    reviewId: contentId,
+                    authorUsername: review.userId.username,
+                    authorAvatar: review.userId.avatar
+                },
+                movie: {
+                    tmdbId: review.movieId,
+                    title: movie.title,
+                    posterPath: movie.posterPath
+                }
+            });
+        } else if (contentType === 'list') {
+            const list = await MovieList.findById(contentId);
+
+            await activityService.registerActivity({
+                userId,
+                actionType: 'liked_list',
+                movieList: {
+                    listId: contentId,
+                    title: list.title,
+                    coverImage: list.coverImage,
+                    authorUsername: list.userId.username,
+                    authorAvatar: list.userId.avatar
+                }
+            });
+        }
 
         res.status(201).json({
             message: 'Like añadido',

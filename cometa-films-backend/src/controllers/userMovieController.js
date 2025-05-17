@@ -4,6 +4,9 @@ const Watchlist = require('../models/watchlist.model');
 const Watched = require('../models/watched.model');
 const Review = require('../models/review.model');
 const Comment = require('../models/comment.model');
+const tmdbService = require('../services/tmdb.service');
+const Follow = require('../models/follow.model');
+const activityService = require('../services/activity.service');
 
 exports.addPeliPendiente = async (req, res) => {
     try {
@@ -28,6 +31,26 @@ exports.addPeliPendiente = async (req, res) => {
             movieId,
             addedAt: new Date()
         });
+
+
+        try {
+            // Obtener detalles de la película para la actividad
+            const movieDetails = await tmdbService.getMovieDetails(movieId);
+
+            // Registrar actividad
+            await activityService.registerActivity({
+                userId,
+                actionType: 'added_to_watchlist',
+                movie: {
+                    tmdbId: movieId,
+                    title: movieDetails.title,
+                    posterPath: movieDetails.posterPath
+                }
+            });
+        } catch (activityError) {
+            console.error('Error al registrar actividad de película pendiente:', activityError);
+            // No afecta la respuesta principal
+        }
 
         // Recuperar la lista actualizada para mantener el formato anterior
         const pelisPendientes = await Watchlist.find({ userId });
@@ -70,6 +93,20 @@ exports.addPeliVista = async (req, res) => {
             watchedAt: new Date()
         });
 
+        // Obtener detalles de la película para la actividad
+        const movieDetails = await tmdbService.getMovieDetails(movieId); // Implementar esta función
+
+        // Registrar actividad
+        await activityService.registerActivity({
+            userId,
+            actionType: 'added_to_watched',
+            movie: {
+                tmdbId: movieId,
+                title: movieDetails.title,
+                posterPath: movieDetails.posterPath
+            }
+        });
+
         res.json({
             message: 'Película marcada como vista',
             watchedItem: newWatchedItem
@@ -107,6 +144,25 @@ exports.addReview = async (req, res) => {
             comment,
             createdAt: new Date()
         });
+
+
+        // Obtener detalles de la película para la actividad
+        const movieDetails = await tmdbService.getMovieDetails(movieId);
+
+        // Registrar actividad
+        await activityService.registerActivity({
+            userId,
+            actionType: 'created_review',
+            movie: {
+                tmdbId: movieId,
+                title: movieDetails.title,
+                posterPath: movieDetails.posterPath
+            },
+            review: {
+                reviewId: newReview._id
+            }
+        });
+
 
         // Añadir datos del usuario para la respuesta (ya que el frontend los espera)
         const reviewWithUserInfo = {

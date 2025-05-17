@@ -2,6 +2,7 @@ const MovieList = require('../models/movie-list.model');
 const Follow = require('../models/follow.model');
 const User = require('../models/user.model');
 const mongoose = require('mongoose');
+const activityService = require('../services/activity.service');
 
 // Crear una nueva lista
 exports.createList = async (req, res) => {
@@ -23,6 +24,19 @@ exports.createList = async (req, res) => {
             coverImage: coverImage || null,
             movies: movies || []
         });
+
+        // Si la lista es pública, registrar actividad
+        if (isPublic) {
+            await activityService.registerActivity({
+                userId,
+                actionType: 'created_public_list',
+                movieList: {
+                    listId: newList._id,
+                    title: newList.title,
+                    coverImage: newList.coverImage
+                }
+            });
+        }
 
         res.status(201).json({
             message: 'Lista creada correctamente',
