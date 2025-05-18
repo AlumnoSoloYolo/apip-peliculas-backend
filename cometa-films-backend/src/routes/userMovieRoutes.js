@@ -17,6 +17,7 @@ const {
     updateUserProfile,
     deleteAccount
 } = require('../controllers/userMovieController');
+const { getPersonalizedRecommendations } = require('../controllers/recomendationController');
 
 // Todas las rutas requieren autenticación
 router.use(auth);
@@ -36,5 +37,6 @@ router.post('/reviews', addReview);
 router.put('/reviews/:movieId', updateReview);
 router.delete('/reviews/:movieId', deleteReview);
 router.get('/movies/:movieId/reviews', getMovieReviews);
+router.get('/recommendations/personalized', auth, getPersonalizedRecommendations);
 
 module.exports = router;
