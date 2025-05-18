@@ -1,18 +1,5 @@
 const User = require('../models/user.model');
-const paypal = require('@paypal/paypal-server-sdk');
-
-// Configuración de PayPal
-function getPayPalClient() {
-    const clientId = process.env.PAYPAL_CLIENT_ID;
-    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
-
-    // Usar sandbox para desarrollo y producción para producción
-    const environment = process.env.NODE_ENV === 'production'
-        ? new paypal.core.LiveEnvironment(clientId, clientSecret)
-        : new paypal.core.SandboxEnvironment(clientId, clientSecret);
-
-    return new paypal.core.PayPalHttpClient(environment);
-}
+const { createPayPalClient } = require('../config/paypal.config');
 
 // Obtener el estado premium del usuario
 exports.getPremiumStatus = async (req, res) => {
@@ -43,50 +30,84 @@ exports.getPremiumStatus = async (req, res) => {
     }
 };
 
-// Crear orden de PayPal para la suscripción
+// Crear una orden de pago para suscripción
 exports.createSubscription = async (req, res) => {
+    console.log('------ INICIO createSubscription ------');
     try {
-        const paypalClient = getPayPalClient();
-        const request = new paypal.orders.OrdersCreateRequest();
+        console.log('Iniciando creación de suscripción PayPal');
 
-        // Configurar la orden
-        request.prefer("return=representation");
-        request.requestBody({
-            intent: 'CAPTURE',
-            purchase_units: [{
-                amount: {
-                    currency_code: 'EUR',
-                    value: '5.99'
-                },
-                description: 'Suscripción Premium de CometaCine - 1 mes'
-            }],
-            application_context: {
-                brand_name: 'CometaCine',
-                landing_page: 'BILLING',
-                user_action: 'PAY_NOW',
-                return_url: `${process.env.FRONTEND_URL}/premium/success`,
-                cancel_url: `${process.env.FRONTEND_URL}/premium/cancel`
+        // Log de variables de entorno para depuración
+        console.log('Variables de entorno PayPal:');
+        console.log('- PAYPAL_CLIENT_ID:', process.env.PAYPAL_CLIENT_ID ? 'Configurado' : 'No configurado');
+        console.log('- PAYPAL_CLIENT_SECRET:', process.env.PAYPAL_CLIENT_SECRET ? 'Configurado' : 'No configurado');
+        console.log('- FRONTEND_URL:', process.env.FRONTEND_URL || 'No configurado');
+
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4200';
+
+        try {
+            // Obtener el cliente PayPal (que incluye el token)
+            console.log('Obteniendo cliente PayPal...');
+            const paypalClient = await createPayPalClient();
+            console.log('Cliente PayPal obtenido correctamente');
+
+            // Crear la orden con la API v2
+            console.log('Creando orden de PayPal...');
+            const orderData = {
+                intent: 'CAPTURE',
+                purchase_units: [{
+                    amount: {
+                        currency_code: 'EUR',
+                        value: '5.99'
+                    },
+                    description: 'Suscripción Premium de CometaCine - 1 mes'
+                }],
+                application_context: {
+                    brand_name: 'CometaCine',
+                    landing_page: 'BILLING',
+                    user_action: 'PAY_NOW',
+                    return_url: `${frontendUrl}/premium/success`,
+                    cancel_url: `${frontendUrl}/premium/cancel`
+                }
+            };
+
+            console.log('Ejecutando solicitud a PayPal...');
+            const response = await paypalClient.post('/v2/checkout/orders', orderData);
+
+            console.log('Orden creada en PayPal, ID:', response.data.id);
+
+            // Encontrar el enlace de aprobación
+            const approveLink = response.data.links.find(link => link.rel === 'approve');
+
+            if (!approveLink) {
+                throw new Error('No se encontró el enlace de aprobación en la respuesta de PayPal');
             }
-        });
 
-        // Ejecutar la solicitud
-        const order = await paypalClient.execute(request);
+            const approveUrl = approveLink.href;
+            console.log('URL de aprobación:', approveUrl);
 
-        // Guardar temporalmente la información del pedido
-        // Puedes usar una colección de órdenes pendientes en MongoDB si es necesario
+            // Respuesta exitosa
+            console.log('------ FIN createSubscription (Éxito) ------');
+            res.json({
+                orderId: response.data.id,
+                approveUrl: approveUrl
+            });
 
-        // Devolver los enlaces para el checkout
-        const approveUrl = order.result.links.find(link => link.rel === 'approve').href;
+        } catch (paypalError) {
+            console.error('Error específico de PayPal:', paypalError);
+            throw paypalError; // Re-lanzar para el manejo global
+        }
 
-        res.json({
-            orderId: order.result.id,
-            approveUrl: approveUrl
-        });
     } catch (error) {
-        console.error('Error al crear suscripción PayPal:', error);
+        console.error('------ ERROR en createSubscription ------');
+        console.error('Error completo:', error);
+        console.error('Nombre del error:', error.name);
+        console.error('Mensaje de error:', error.message);
+        console.error('Stack de error:', error.stack);
+
         res.status(500).json({
             message: 'Error al iniciar el proceso de pago',
-            error: error.message
+            error: error.message,
+            details: 'Verifica los logs del servidor para más información'
         });
     }
 };
@@ -101,14 +122,12 @@ exports.capturePayment = async (req, res) => {
             return res.status(400).json({ message: 'ID de orden requerido' });
         }
 
-        // Capturar el pago
-        const paypalClient = getPayPalClient();
-        const request = new paypal.orders.OrdersCaptureRequest(orderId);
-        request.requestBody({});
+        // Capturar el pago con la API v2
+        const paypalClient = await createPayPalClient();
 
-        const capture = await paypalClient.execute(request);
+        const response = await paypalClient.post(`/v2/checkout/orders/${orderId}/capture`);
 
-        if (capture.result.status === 'COMPLETED') {
+        if (response.data.status === 'COMPLETED') {
             // Calcular fecha de expiración (1 mes desde ahora)
             const now = new Date();
             const expiryDate = new Date(now);
@@ -137,7 +156,7 @@ exports.capturePayment = async (req, res) => {
             res.status(400).json({
                 success: false,
                 message: 'Error en el pago: estado no completado',
-                status: capture.result.status
+                status: response.data.status
             });
         }
     } catch (error) {
@@ -163,7 +182,7 @@ exports.cancelSubscription = async (req, res) => {
         // Si hay una suscripción en PayPal, cancelarla
         if (user.paypalSubscriptionId) {
             // Aquí iría el código para cancelar en PayPal si es necesario
-            // Nota: Para pagos únicos, esto no es necesario
+            // Para pagos únicos, esto no es necesario
         }
 
         // Actualizar en la base de datos

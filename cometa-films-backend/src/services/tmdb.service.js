@@ -1,10 +1,13 @@
-
+require('dotenv').config();
 const axios = require('axios');
+
 
 
 /*Obtiene titulo, id y poster de la película*/
 exports.getMovieDetails = async (movieId) => {
     try {
+        console.log(`Intentando obtener película con ID: ${movieId}`);
+
         const response = await axios.get(
             `https://api.themoviedb.org/3/movie/${movieId}`,
             {
@@ -18,25 +21,47 @@ exports.getMovieDetails = async (movieId) => {
             }
         );
 
-        // Asegurar que devolvemos los géneros completos
+        console.log(`Respuesta exitosa para película ${movieId}:`, {
+            status: response.status,
+            title: response.data.title,
+            id: response.data.id
+        });
+
         return {
             tmdbId: movieId,
             id: response.data.id,
             title: response.data.title,
             posterPath: response.data.poster_path,
-            genres: response.data.genres || [], // Asegurarnos de incluir los géneros completos
+            genres: response.data.genres || [],
             overview: response.data.overview,
             vote_average: response.data.vote_average,
             release_date: response.data.release_date
         };
     } catch (error) {
-        console.error(`Error al obtener detalles de película ${movieId}:`, error);
+        console.error(`Error al obtener detalles de película ${movieId}:`);
+
+        if (error.response) {
+            // La solicitud se hizo y el servidor respondió con un código de estado
+            // que no está en el rango 2xx
+            console.error('Respuesta de error:', {
+                status: error.response.status,
+                data: error.response.data,
+                headers: error.response.headers
+            });
+        } else if (error.request) {
+            // La solicitud se hizo pero no se recibió respuesta
+            console.error('No se recibió respuesta de TMDb');
+        } else {
+            // Algo ocurrió al configurar la solicitud que desencadenó un error
+            console.error('Error de configuración:', error.message);
+        }
+
         return {
             tmdbId: movieId,
             id: movieId,
             title: 'Película desconocida',
             posterPath: null,
-            genres: [] // Devolver array vacío de géneros
+            genres: []
         };
     }
 };
