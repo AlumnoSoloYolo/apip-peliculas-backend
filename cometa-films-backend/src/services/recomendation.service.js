@@ -8,7 +8,8 @@ const mongoose = require('mongoose');
 
 // Cache para mejorar rendimiento - reducido a 2 horas para que se actualice con más frecuencia
 const recommendationCache = new Map();
-const CACHE_EXPIRY = 2 * 60 * 60 * 1000; // 2 horas
+// const CACHE_EXPIRY = 2 * 60 * 60 * 1000; // 2 horas
+const CACHE_EXPIRY = 365 * 24 * 60 * 60 * 1000; // 1 año
 
 /**
  * Obtiene recomendaciones personalizadas para un usuario premium

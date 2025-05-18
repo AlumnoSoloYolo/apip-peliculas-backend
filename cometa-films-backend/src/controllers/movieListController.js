@@ -10,12 +10,26 @@ exports.createList = async (req, res) => {
         const { title, description, isPublic, coverImage, movies } = req.body;
         const userId = req.user.id;
 
-        // Validaciones 
+        // Validaciones básicas
         if (!title) {
             return res.status(400).json({ message: 'El título es obligatorio' });
         }
 
-        // Crear la lista
+        // Verificar límite para usuarios no premium
+        if (!req.user.isPremium) {
+            const listsCount = await MovieList.countDocuments({ userId });
+
+            if (listsCount >= 5) {
+                return res.status(403).json({
+                    message: 'Has alcanzado el límite de 5 listas para usuarios gratuitos. Actualiza a Premium para crear listas ilimitadas.',
+                    error: 'PREMIUM_REQUIRED',
+                    currentCount: listsCount,
+                    limit: 5
+                });
+            }
+        }
+
+        // Continuar con la creación de la lista
         const newList = await MovieList.create({
             userId,
             title,
@@ -25,7 +39,7 @@ exports.createList = async (req, res) => {
             movies: movies || []
         });
 
-        // Si la lista es pública, registrar actividad
+        // Registrar actividad si es pública
         if (isPublic) {
             await activityService.registerActivity({
                 userId,
@@ -59,7 +73,20 @@ exports.getUserLists = async (req, res) => {
 
         const lists = await MovieList.find({ userId }).sort({ updatedAt: -1 });
 
-        res.json(lists);
+        // Incluir información de límites para usuarios no premium
+        const limitInfo = !req.user.isPremium ? {
+            isPremium: false,
+            currentCount: lists.length,
+            maxLists: 5,
+            remainingLists: Math.max(0, 5 - lists.length)
+        } : {
+            isPremium: true
+        };
+
+        res.json({
+            lists,
+            limitInfo
+        });
     } catch (error) {
         console.error('Error al obtener listas:', error);
         res.status(500).json({

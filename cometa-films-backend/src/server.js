@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const http = require('http');
 const initializeSocketServer = require('./socket');
 const config = require('./config/config');
+require('./cron/subscription-checker');
 
 // Importamos las rutas
 const authRoutes = require('./routes/auth.routes');
@@ -12,7 +13,9 @@ const userSocialRoutes = require('./routes/userSocialRoutes');
 const commentRoutes = require('./routes/commentRoutes');
 const movieListRoutes = require('./routes/movieListRoutes');
 const likeRoutes = require('./routes/likeRoutes');
-const activityRoutes = require('./routes/activityRoutes'); // Nueva ruta para actividades
+const activityRoutes = require('./routes/activityRoutes');
+const premiumRoutes = require('./routes/premiumRoutes');
+
 
 const app = express();
 const server = http.createServer(app); // Crear servidor HTTP
@@ -39,7 +42,8 @@ app.use('/social', userSocialRoutes);
 app.use('/comments', commentRoutes);
 app.use('/movie-lists', movieListRoutes);
 app.use('/likes', likeRoutes);
-app.use('/activity', activityRoutes); // Nueva ruta para actividades
+app.use('/activity', activityRoutes);
+app.use('/api/premium', premiumRoutes);
 
 // Ruta para prueba de salud del API
 app.get('/', (req, res) => {

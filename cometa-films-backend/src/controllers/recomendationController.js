@@ -6,13 +6,12 @@ exports.getPersonalizedRecommendations = async (req, res) => {
         const limit = parseInt(req.query.limit) || 15;
         const forceRefresh = req.query.refresh === 'true';
 
-        // Opcional: Verificar si el usuario es premium
-        // if (!req.user.isPremium) {
-        //   return res.status(403).json({
-        //     message: 'Esta funcionalidad requiere una cuenta premium',
-        //     error: 'PREMIUM_REQUIRED'
-        //   });
-        // }
+        if (!req.user.isPremium) {
+            return res.status(403).json({
+                message: 'Esta funcionalidad requiere una cuenta premium',
+                error: 'PREMIUM_REQUIRED'
+            });
+        }
 
         const recommendations = await recommendationService.getPersonalizedRecommendations(userId, limit, forceRefresh);
 
@@ -25,6 +24,10 @@ exports.getPersonalizedRecommendations = async (req, res) => {
         });
     }
 };
+
+
+
+
 
 
 

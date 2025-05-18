@@ -31,7 +31,32 @@ const userSchema = new mongoose.Schema({
     perfilPrivado: {
         type: Boolean,
         default: false
-    }
+    },
+    isPremium: {
+        type: Boolean,
+        default: false
+    },
+    premiumExpiry: {
+        type: Date,
+        default: null
+    },
+    paypalSubscriptionId: {
+        type: String,
+        default: null
+    },
+    premiumHistory: [{
+        action: {
+            type: String,
+            enum: ['subscribed', 'renewed', 'canceled', 'expired']
+        },
+        date: {
+            type: Date,
+            default: Date.now
+        },
+        details: {
+            type: String
+        }
+    }]
 }, {
     timestamps: true
 });
