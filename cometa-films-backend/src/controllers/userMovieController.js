@@ -7,6 +7,7 @@ const Comment = require('../models/comment.model');
 const tmdbService = require('../services/tmdb.service');
 const Follow = require('../models/follow.model');
 const activityService = require('../services/activity.service');
+const recommendationService = require('../services/recomendation.service');
 
 exports.addPeliPendiente = async (req, res) => {
     try {
@@ -54,6 +55,8 @@ exports.addPeliPendiente = async (req, res) => {
 
         // Recuperar la lista actualizada para mantener el formato anterior
         const pelisPendientes = await Watchlist.find({ userId });
+
+        recommendationService.invalidateCache(userId);
 
         res.json({
             message: 'Película añadida a pendientes',
@@ -106,6 +109,8 @@ exports.addPeliVista = async (req, res) => {
                 posterPath: movieDetails.posterPath
             }
         });
+
+        recommendationService.invalidateCache(userId);
 
         res.json({
             message: 'Película marcada como vista',
@@ -170,6 +175,9 @@ exports.addReview = async (req, res) => {
             username: user.username,
             avatar: user.avatar
         };
+
+
+        recommendationService.invalidateCache(userId);
 
         res.json({
             message: 'Reseña añadida correctamente',
@@ -337,6 +345,8 @@ exports.removePeliPendiente = async (req, res) => {
         // Recuperar la lista actualizada
         const pelisPendientes = await Watchlist.find({ userId });
 
+        recommendationService.invalidateCache(userId);
+
         res.json({
             message: 'Película eliminada de pendientes',
             pelisPendientes
@@ -366,6 +376,9 @@ exports.removePeliVista = async (req, res) => {
 
         // Recuperar la lista actualizada
         const pelisVistas = await Watched.find({ userId });
+
+
+        recommendationService.invalidateCache(userId);
 
         res.json({
             message: 'Película eliminada de vistas',
@@ -523,6 +536,8 @@ exports.deleteReview = async (req, res) => {
 
         // Eliminar la reseña
         await Review.findByIdAndDelete(review._id);
+
+        recommendationService.invalidateCache(userId);
 
         res.json({
             message: 'Reseña eliminada correctamente'
