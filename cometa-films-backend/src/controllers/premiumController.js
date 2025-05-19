@@ -6,9 +6,16 @@ exports.getPremiumStatus = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        const user = await User.findById(userId).select('isPremium premiumExpiry');
+        const user = await User.findById(userId)
+            .select('isPremium premiumExpiry premiumHistory');
 
-        // Calcular días restantes si es premium
+        // Verificar si la suscripción está cancelada pero aún activa
+        const canceledButActive = user.premiumHistory && 
+            user.premiumHistory.length > 0 && 
+            user.premiumHistory[user.premiumHistory.length - 1].action === 'canceled' &&
+            user.isPremium;
+
+        // Calcular días restantes
         let remainingDays = 0;
         if (user.isPremium && user.premiumExpiry) {
             const now = new Date();
@@ -16,10 +23,17 @@ exports.getPremiumStatus = async (req, res) => {
             remainingDays = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
         }
 
+        // Incluir historial reciente (últimas 5 entradas)
+        const recentHistory = user.premiumHistory ? 
+            user.premiumHistory.slice(-5).reverse() : 
+            [];
+
         res.json({
             isPremium: user.isPremium,
             premiumExpiry: user.premiumExpiry,
-            remainingDays: remainingDays > 0 ? remainingDays : 0
+            remainingDays: remainingDays > 0 ? remainingDays : 0,
+            isCanceled: canceledButActive,
+            subscriptionHistory: recentHistory
         });
     } catch (error) {
         console.error('Error al obtener estado premium:', error);
