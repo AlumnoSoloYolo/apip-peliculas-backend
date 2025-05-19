@@ -9,6 +9,7 @@ exports.createList = async (req, res) => {
     try {
         const { title, description, isPublic, coverImage, movies } = req.body;
         const userId = req.user.id;
+        const LISTS_LIMIT = 5; // Límite para usuarios no premium
 
         // Validaciones básicas
         if (!title) {
@@ -19,12 +20,12 @@ exports.createList = async (req, res) => {
         if (!req.user.isPremium) {
             const listsCount = await MovieList.countDocuments({ userId });
 
-            if (listsCount >= 5) {
+            if (listsCount >= LISTS_LIMIT) {
                 return res.status(403).json({
-                    message: 'Has alcanzado el límite de 5 listas para usuarios gratuitos. Actualiza a Premium para crear listas ilimitadas.',
+                    message: `Has alcanzado el límite de ${LISTS_LIMIT} listas para usuarios gratuitos. Actualiza a Premium para crear listas ilimitadas.`,
                     error: 'PREMIUM_REQUIRED',
                     currentCount: listsCount,
-                    limit: 5
+                    limit: LISTS_LIMIT
                 });
             }
         }
@@ -70,14 +71,100 @@ exports.createList = async (req, res) => {
 exports.getUserLists = async (req, res) => {
     try {
         const userId = req.user.id;
+        const isPremium = req.user.isPremium || false;
+        const LISTS_LIMIT = 5; // Límite para usuarios no premium
 
-        const lists = await MovieList.find({ userId }).sort({ updatedAt: -1 });
+        // Obtener todas las listas del usuario
+        const allLists = await MovieList.find({ userId }).sort({ createdAt: 1 });
 
-        res.json(lists); // Devuelve directamente el array sin información de límites
+        // Preparar respuesta con metadatos adicionales
+        let response = {
+            lists: [],
+            isPremium,
+            totalLists: allLists.length,
+            hiddenLists: 0
+        };
+
+        if (isPremium) {
+            // Usuario premium: mostrar todas las listas
+            response.lists = allLists;
+        } else {
+            // Usuario no premium: mostrar solo hasta el límite (las más antiguas primero)
+            response.lists = allLists.slice(0, LISTS_LIMIT);
+            response.hiddenLists = Math.max(0, allLists.length - LISTS_LIMIT);
+        }
+
+        res.json(response);
     } catch (error) {
         console.error('Error al obtener listas:', error);
         res.status(500).json({
             message: 'Error al obtener las listas',
+            error: error.message
+        });
+    }
+};
+
+// Obtener listas públicas de un usuario específico
+exports.getUserPublicLists = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const currentUserId = req.user.id;
+        const isPremium = req.user.isPremium || false;
+        const LISTS_LIMIT = 5; // Límite para usuarios no premium
+
+        console.log(`Solicitando listas para userId: ${userId}, currentUserId: ${currentUserId}`);
+
+        // Verificar si el usuario existe
+        const userExists = await User.exists({ _id: userId });
+        if (!userExists) {
+            console.log('Usuario no encontrado');
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
+
+        // Si es el propio usuario, aplicar lógica de límite según estado premium
+        if (userId === currentUserId) {
+            console.log('El usuario solicita sus propias listas');
+            
+            // Obtener todas las listas
+            const allLists = await MovieList.find({ userId }).sort({ createdAt: 1 });
+            
+            // Preparar respuesta
+            let response = {
+                lists: [],
+                isPremium,
+                totalLists: allLists.length,
+                hiddenLists: 0
+            };
+
+            if (isPremium) {
+                // Usuario premium: mostrar todas las listas
+                response.lists = allLists;
+            } else {
+                // Usuario no premium: mostrar solo hasta el límite (las más antiguas primero)
+                response.lists = allLists.slice(0, LISTS_LIMIT);
+                response.hiddenLists = Math.max(0, allLists.length - LISTS_LIMIT);
+            }
+
+            return res.json(response);
+        }
+
+        // Para otros usuarios, solo devuelve las listas públicas (sin límite)
+        const lists = await MovieList.find({
+            userId,
+            isPublic: true
+        }).sort({ updatedAt: -1 });
+
+        console.log(`Encontradas ${lists.length} listas públicas para el usuario ${userId}`);
+        
+        res.json({
+            lists: lists,
+            totalLists: lists.length,
+            hiddenLists: 0
+        });
+    } catch (error) {
+        console.error('Error al obtener listas del usuario:', error);
+        res.status(500).json({
+            message: 'Error al obtener listas del usuario',
             error: error.message
         });
     }
@@ -135,45 +222,7 @@ exports.addMovieToList = async (req, res) => {
     }
 };
 
-// Obtener listas públicas de un usuario específico
-exports.getUserPublicLists = async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const currentUserId = req.user.id;
 
-        console.log(`Solicitando listas para userId: ${userId}, currentUserId: ${currentUserId}`);
-
-        // Verificar si el usuario existe
-        const userExists = await User.exists({ _id: userId });
-        if (!userExists) {
-            console.log('Usuario no encontrado');
-            return res.status(404).json({ message: 'Usuario no encontrado' });
-        }
-
-        // Si es el propio usuario, devuelve todas sus listas
-        if (userId === currentUserId) {
-            console.log('El usuario solicita sus propias listas');
-            const lists = await MovieList.find({ userId }).sort({ updatedAt: -1 });
-            console.log(`Encontradas ${lists.length} listas propias`);
-            return res.json(lists);
-        }
-
-        // Para otros usuarios, solo devuelve las listas públicas
-        const lists = await MovieList.find({
-            userId,
-            isPublic: true
-        }).sort({ updatedAt: -1 });
-
-        console.log(`Encontradas ${lists.length} listas públicas para el usuario ${userId}`);
-        res.json(lists);
-    } catch (error) {
-        console.error('Error al obtener listas del usuario:', error);
-        res.status(500).json({
-            message: 'Error al obtener listas del usuario',
-            error: error.message
-        });
-    }
-};
 
 exports.getListById = async (req, res) => {
     try {
